@@ -1,0 +1,59 @@
+# Semantic layer for the Receivables Health dashboard.
+# Each metric has one business definition, so every chart and table uses the same numbers.
+
+source: SEC EDGAR XBRL company facts (10-K filings, annual values only)
+
+dimensions:
+  ticker: {description: "Company ticker"}
+  company: {description: "Registrant name as filed with the SEC"}
+  sector: {description: "Broad sector grouping assigned for this dashboard"}
+  fiscal_year: {description: "Fiscal year, taken as the calendar year of the period-end date"}
+
+base_measures:
+  accounts_receivable_net:
+    xbrl_tags: [AccountsReceivableNetCurrent, ReceivablesNetCurrent]
+    unit: USD
+    type: balance (point in time)
+  allowance_for_credit_losses:
+    xbrl_tags: [AllowanceForDoubtfulAccountsReceivableCurrent, AccountsReceivableAllowanceForCreditLossCurrent]
+    unit: USD
+    type: balance (point in time)
+  revenue:
+    xbrl_tags: [RevenueFromContractWithCustomerExcludingAssessedTax, Revenues, SalesRevenueNet]
+    unit: USD
+    type: flow (12-month period)
+  credit_loss_provision:
+    xbrl_tags: [ProvisionForDoubtfulAccounts, AccountsReceivableCreditLossExpenseReversal]
+    unit: USD
+    type: flow (12-month period)
+  write_offs:
+    xbrl_tags: [AllowanceForDoubtfulAccountsReceivableWriteOffs, AccountsReceivableAllowanceForCreditLossWriteoff]
+    unit: USD
+    type: flow (12-month period)
+
+metrics:
+  gross_receivables:
+    formula: accounts_receivable_net + allowance_for_credit_losses
+    description: "Receivables before the allowance is deducted"
+  dso_days:
+    formula: accounts_receivable_net / revenue * 365
+    description: "Days sales outstanding: how many days of revenue are tied up in receivables"
+  allowance_coverage_pct:
+    formula: allowance_for_credit_losses / gross_receivables * 100
+    description: "Share of gross receivables the company expects not to collect"
+  ar_growth_pct:
+    formula: yoy_change(accounts_receivable_net)
+  revenue_growth_pct:
+    formula: yoy_change(revenue)
+  ar_minus_revenue_growth_pp:
+    formula: ar_growth_pct - revenue_growth_pct
+    description: "Positive values mean receivables are growing faster than sales, an early collection-risk signal"
+  write_off_rate_pct:
+    formula: write_offs / prior_year(gross_receivables) * 100
+
+data_quality_rules:
+  - {id: DQ1, rule: "A metric's base measures must all be reported for the year", severity: warning}
+  - {id: DQ2, rule: "Only one value per company and fiscal year (restated period-ends within 10 days are merged, latest filing kept)", severity: info}
+  - {id: DQ3, rule: "Allowance coverage above 10% is flagged for review (possible tag mismatch)", severity: review}
+  - {id: DQ4, rule: "Negative provisions are kept but labelled as reversals", severity: info}
+  - {id: DQ5, rule: "Revenue below net receivables is treated as an extraction error", severity: error}
